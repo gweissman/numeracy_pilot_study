@@ -1,6 +1,6 @@
 This repository contains the de-identified data used in the manuscript: 
 
-"Data Analysis: Numeracy and Understanding of Quantitative Aspects of Predictive Models", 
+"Numeracy and Understanding of Quantitative Aspects of Predictive Models: A Pilot Study" 
 
 by Gary E. Weissman, MD, MSHP, Kuldeep N. Yadav, BA, Vanessa Madden, Bsc, Katherine R. Courtright, MD, MSHP, Joanna L. Hart, MD, MSHP, David A. Asch, MD, MBA, Marilyn M. Schapira, MD, MPH, Scott D. Halpern, MD, PhD
 
