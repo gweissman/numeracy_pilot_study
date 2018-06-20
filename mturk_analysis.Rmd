@@ -1,13 +1,16 @@
 ---
 title: "Data Analysis: Numeracy and Understanding of Quantitative Aspects of Predictive Models"
 authors: "Gary E. Weissman, MD, MSHP, Kuldeep N. Yadav, BA, Vanessa Madden, Bsc, Katherine R. Courtright, MD, MSHP, Joanna L. Hart, MD, MSHP, David A. Asch, MD, MBA, Marilyn M. Schapira, MD, MPH, Scott D. Halpern, MD, PhD"
-date: February 15, 2018
 ---
 
 ```{r setup}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 library(data.table)
 library(ggplot2)
+library(lmtest)
+library(sandwich)
+library(psych)
+library(corrplot)
 ```
 
 
@@ -24,26 +27,130 @@ rr <- fread('mturk_study_data.csv')
 # combined model
 mv_combo <- lm(total_score_mean ~ snumi_total + sns_total + I(gender == 'male') + I(race == 'white') + I(educ %in% c('bachelors','masters','doctoral')) + age + t_duration_min, data = rr)
 summary(mv_combo)
-xtable::xtable(data.frame(Coef = coef(mv_combo), confint(mv_combo), p = coef(summary(mv_combo))[,4]), digits = 4)
+knitr::kable(data.frame(Coef = coef(mv_combo), confint(mv_combo), p = coef(summary(mv_combo))[,4]), digits = 4)
 
 # also do by Cohort:
 # batch 1/2 (Cohort 1 - younger) 
 mv_combo1 <- lm(total_score_mean ~ snumi_total + sns_total + I(gender == 'male') + I(race == 'white') + I(educ %in% c('bachelors','masters','doctoral')) + age + t_duration_min, data = rr[batch_id != 3])
 summary(mv_combo1)
 #xtable::xtable(mv_combo)
-xtable::xtable(data.frame(Coef = coef(mv_combo1), confint(mv_combo1), p = coef(summary(mv_combo1))[,4]), digits = 4)
+knitr::kable(data.frame(Coef = coef(mv_combo1), confint(mv_combo1), p = coef(summary(mv_combo1))[,4]), digits = 4)
 
 # batch 3 (Cohort 2 - older)
 mv_combo3 <- lm(total_score_mean ~ snumi_total + sns_total + I(gender == 'male') + I(race == 'white') + I(educ %in% c('bachelors','masters','doctoral')) + age + t_duration_min, data = rr[batch_id == 3])
 summary(mv_combo3)
 #xtable::xtable(mv_combo)
-xtable::xtable(data.frame(Coef = coef(mv_combo3), confint(mv_combo3), p = coef(summary(mv_combo3))[,4]), digits = 4)
+knitr::kable(data.frame(Coef = coef(mv_combo3), confint(mv_combo3), p = coef(summary(mv_combo3))[,4]), digits = 4)
+```
+
+```{r assumptions_test}
+# Linearity
+ggplot(rr, aes(snumi_total, total_score_mean)) + 
+  geom_point() + 
+  geom_smooth() + 
+  theme_bw()
+ggplot(rr, aes(sns_total, total_score_mean)) + 
+  geom_point() + 
+  geom_smooth() + 
+  theme_bw()
+ggplot(rr, aes(age, total_score_mean)) + 
+  geom_point() + 
+  geom_smooth() + 
+  theme_bw()
+ggplot(rr, aes(t_duration_min, total_score_mean)) + 
+  geom_point() + 
+  geom_smooth() + 
+  theme_bw()
+
+# Independence
+# Sample of Mturkers was done as described in the manucsript without any clustering or
+# correlation of recruitment techniques to suggest dependence among obserations.
+
+# Normality
+# Distribution of residuals
+ggplot(data.table(residuals = resid(mv_combo)), aes(x=residuals)) +
+  geom_density(aes(y=..scaled..)) +
+  theme_bw() + 
+  geom_rug() +
+  xlab('residuals') +
+  ylab('density')
+# QQ-plot
+ggplot(data.table(residuals = resid(mv_combo)), aes(sample=residuals)) +
+  geom_qq() +
+  geom_qq_line() +
+  theme_bw()
+
+# Equal variance
+# look at a residual plot of yhat
+qplot(fitted(mv_combo), resid(mv_combo)) +
+  geom_abline(slope =0, intercept = 0, color = 'red') +
+  geom_smooth(color = 'blue', method = 'loess') + 
+  theme_bw()
+# look at a residual plot of continuous independent vars
+qplot(rr$snumi_total, resid(mv_combo)) +
+  geom_abline(slope =0, intercept = 0, color = 'red') +
+  geom_smooth(color = 'blue') + 
+  xlab('SNUMI score') + 
+  theme_bw()
+qplot(rr$sns_total, resid(mv_combo)) +
+  geom_abline(slope =0, intercept = 0, color = 'red') +
+  geom_smooth(color = 'blue') + 
+  xlab('SNS score') + 
+  theme_bw()
+qplot(rr$age, resid(mv_combo)) +
+  geom_abline(slope =0, intercept = 0, color = 'red') +
+  geom_smooth(color = 'blue') + 
+  xlab('age (years)') + 
+  theme_bw()
+qplot(rr$t_duration_min, resid(mv_combo)) +
+  geom_abline(slope =0, intercept = 0, color = 'red') +
+  geom_smooth(color = 'blue') + 
+  xlab('time (minutes)') + 
+  theme_bw()
+# Test using robust standard errors to see if estimates change
+coeftest(mv_combo, vcov = vcovHC(mv_combo, type="HC1"))
+# NB. no difference in estimates or CIs...
+
+
+```
+
+```{r reliability}
+# Use Cronbach's alpha to assess reliability of the test
+alpha(rr[,2:30,with=F],check.keys=T)
 ```
 
 
+```{r correlation_matrix}
+# http://www.sthda.com/english/wiki/visualize-correlation-matrix-using-correlogram
+cor.mtest <- function(mat, ...) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j], ...)
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
 
-```{r numplot}
-# Visualization - boxplot for Figure 3
+# now make corr plot
+p.mat <- cor.mtest(rr[,.(snumi_total,sns_total, age, t_duration_min)])
+
+corrplot(cor(rr[,.('S-NUMi' = snumi_total, 'SNS' = sns_total, 
+                   'age (years)' = age, 
+                   'duration (minutes)' = t_duration_min)]), 
+         method = 'color', type = 'upper', addCoef.col = "black",
+         col=rev(colorRampPalette(colors = c('firebrick','goldenrod'))(4)), 
+         tl.col="black",
+         tl.srt=45, p.mat = p.mat, sig.level = 0.05, insig = "blank")
+```
+
+```{r other_plots}
+# Visualization 
 # Panel A - Objective Numeracy
 rr[, snumi_cat := cut(snumi_total, breaks = c(0, 3, 6, 8),
                       labels = c('low (0-3)','average (4-6)','high (7-8)'),
