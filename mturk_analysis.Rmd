@@ -110,13 +110,6 @@ qplot(rr$t_duration_min, resid(mv_combo)) +
 # Test using robust standard errors to see if estimates change
 coeftest(mv_combo, vcov = vcovHC(mv_combo, type="HC1"))
 # NB. no difference in estimates or CIs...
-
-
-```
-
-```{r reliability}
-# Use Cronbach's alpha to assess reliability of the test
-alpha(rr[,2:30,with=F],check.keys=T)
 ```
 
 
